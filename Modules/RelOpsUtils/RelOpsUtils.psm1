@@ -1,38 +1,9 @@
-function Download-Module {
-  <#
-  .Synopsis
-    Downloads a psm1 module file to the local modules folder
-  .Description
-    The local module will use the psm1 filename, minus extension, as the module name
-  .Parameter url
-    The full url to the userdata module.
-  .Parameter modulesPath
-    The full path to the local modules folder.
-  #>
-  param (
-    [string] $url,
-    [string] $modulesPath = ('{0}\Modules' -f $pshome)
-  )
-  begin {
-    Write-Log -message ("{0} :: Function started" -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
-  }
-  process {
-    $filename = $url.Substring($url.LastIndexOf('/') + 1)
-    $moduleName = [IO.Path]::GetFileNameWithoutExtension($filename)
-    New-Item -ItemType Directory -Force -Path ('{0}\{1}' -f $modulesPath, $moduleName)
-    (New-Object Net.WebClient).DownloadFile($url, ('{0}\{1}\{2}' -f $modulesPath, $moduleName, $filename))
-  }
-  end {
-    Write-Log -message ("{0} :: Function ended" -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
-  }
-}
-
 function Install-Mercurial {
   param (
     [string] $url = 'http://mercurial.selenic.com/release/windows/Mercurial-3.5.1-x64.exe',
     [string] $installer = [IO.Path]::Combine($env:TEMP, $url.Substring($url.LastIndexOf('/') + 1)),
-    [string] $path = [IO.Path]::Combine($env:SystemDrive, 'mozilla-build', 'hg'),
-    [string] $log = [IO.Path]::Combine($env:SystemDrive, 'log', 'hg-install.log')
+    [string] $path = [IO.Path]::Combine([IO.Path]::Combine(('{0}\' -f $env:SystemDrive), 'mozilla-build'), 'hg'),
+    [string] $log = [IO.Path]::Combine([IO.Path]::Combine(('{0}\' -f $env:SystemDrive), 'log'), 'hg-install.log')
   )
   (New-Object Net.WebClient).DownloadFile($url, $installer)
   $installArgs = @('/SP-', '/VerySilent', '/SUPPRESSMSGBOXES', ('/DIR={0}' -f $path), ('/LOG={0}' -f $log))
@@ -42,7 +13,7 @@ function Install-Mercurial {
 function Install-BundleClone {
   param (
     [string] $url = 'https://hg.mozilla.org/hgcustom/version-control-tools/raw-file/default/hgext/bundleclone/__init__.py',
-    [string] $path = [IO.Path]::Combine($env:SystemDrive, 'mozilla-build', 'hg'),
+    [string] $path = [IO.Path]::Combine([IO.Path]::Combine(('{0}\' -f $env:SystemDrive), 'mozilla-build'), 'hg'),
     [string] $filename = 'bundleclone.py',
     [string] $hgrc = [IO.Path]::Combine($env:USERPROFILE, '.hgrc')
   )
@@ -68,46 +39,19 @@ function Install-BundleClone {
 function Enable-BundleClone {
   param (
     [string] $hgrc = [IO.Path]::Combine($env:USERPROFILE, '.hgrc'),
-    [string] $path = [IO.Path]::Combine($env:SystemDrive, 'mozilla-build', 'hg', 'bundleclone.py')
+    [string] $path = [IO.Path]::Combine([IO.Path]::Combine([IO.Path]::Combine(('{0}\' -f $env:SystemDrive), 'mozilla-build'), 'hg'), 'bundleclone.py'),
+    [string] $domain
   )
   begin {
     Write-Log -message ("{0} :: Function started" -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
   }
   process {
-    if (Test-Path $hgrc) {
-      Write-Log -message ("{0} :: detected hgrc at: {1}" -f $($MyInvocation.MyCommand.Name), $hgrc) -severity 'DEBUG'
-      $config = Get-IniContent $hgrc
-      if (-not $config.ContainsKey('extensions')) {
-        $config.Add('extensions', @{})
-        Write-Log -message ("{0} :: created new [extensions] section" -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
-      } else {
-        Write-Log -message ("{0} :: detected existing [extensions] section" -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
-      }
-      if (-not $config['extensions'].ContainsKey('bundleclone')) {
-        Write-Log -message ("{0} :: detected bundleclone extension not enabled." -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
-        try {
-          $config['extensions'].Add('bundleclone', $path)
-          Out-IniFile $config $hgrc
-          Write-Log -message ("{0} :: enabled bundleclone extension." -f $($MyInvocation.MyCommand.Name)) -severity 'INFO'
-        } catch {
-          Write-Log -message ("{0} :: failed to enable bundleclone extension. {1}" -f $($MyInvocation.MyCommand.Name), $_.Exception) -severity 'ERROR'
-        }
-      } else {
-        Write-Log -message ("{0} :: detected enabled bundleclone extension with path: {1}." -f $($MyInvocation.MyCommand.Name), $config['extensions']['bundleclone']) -severity 'DEBUG'
-        if ($config['extensions']['bundleclone'] -ne $path) {
-          try {
-            $config['extensions'].Set_Item('bundleclone', $path)
-            Out-IniFile $config $hgrc
-            Write-Log -message ("{0} :: set bundleclone path to: {1}." -f $($MyInvocation.MyCommand.Name), $path) -severity 'INFO'
-          } catch {
-            Write-Log -message ("{0} :: failed to set bundleclone path to: {1}. {2}" -f $($MyInvocation.MyCommand.Name), $path, $_.Exception) -severity 'ERROR'
-          }
-        }
-      }
+    Set-IniValue -file $hgrc -section 'extensions' -key 'bundleclone' -value $path
+    if ($domain.EndsWith("use1.mozilla.com")) {
+      Set-IniValue -file $hgrc -section 'bundleclone' -key 'prefers' -value "ec2region=us-east-1, stream=revlogv1"
     }
-    if (Test-Path $hgrc) {
-      Write-Log -message "enabling bundleclone" -severity 'INFO'
-      (Get-Content $hgrc) | foreach-Object { $_ -replace "#bundleclone(\s*)?=.*$", "bundleclone=$path" } | Set-Content $hgrc
+    elseif ($domain.EndsWith("usw2.mozilla.com")) {
+      Set-IniValue -file $hgrc -section 'bundleclone' -key 'prefers' -value "ec2region=us-west-2, stream=revlogv1"
     }
   }
   end {
@@ -123,18 +67,85 @@ function Disable-BundleClone {
     Write-Log -message ("{0} :: Function started" -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
   }
   process {
+    Unset-IniValue -file $hgrc -section 'extensions' -key 'bundleclone'
+  }
+  end {
+    Write-Log -message ("{0} :: Function ended" -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
+  }
+}
+
+function Set-IniValue {
+  param (
+    [string] $file,
+    [string] $section,
+    [string] $key,
+    [string] $value
+  )
+  begin {
+    Write-Log -message ("{0} :: Function started" -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
+  }
+  process {
     if (Test-Path $hgrc) {
-      Write-Log -message ("{0} :: detected hgrc at: {1}" -f $($MyInvocation.MyCommand.Name), $hgrc) -severity 'DEBUG'
-      $config = Get-IniContent $hgrc
-      if ($config.ContainsKey('extensions')) {
-        Write-Log -message ("{0} :: detected extension section" -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
-        if ($config['extensions'].ContainsKey('bundleclone')) {
-          Write-Log -message ("{0} :: detected enabled bundleclone extension" -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
+      Write-Log -message ("{0} :: detected ini file at: {1}" -f $($MyInvocation.MyCommand.Name), $file) -severity 'DEBUG'
+      $config = Get-IniContent -FilePath $file
+      if (-not $config.ContainsKey($section)) {
+        $config.Add($section, @{})
+        Write-Log -message ("{0} :: created new [{1}] section" -f $($MyInvocation.MyCommand.Name), $section) -severity 'DEBUG'
+      } else {
+        Write-Log -message ("{0} :: detected existing [{1}] section" -f $($MyInvocation.MyCommand.Name), $section) -severity 'DEBUG'
+      }
+      if (-not $config[$section].ContainsKey($key)) {
+        try {
+          $config[$section].Add($key, $value)
+          $encoding = (Get-FileEncoding -path $file)
+          Out-IniFile -InputObject $config -FilePath $file -Encoding $encoding -Force
+          Write-Log -message ("{0} :: set: [{1}]/{2}, to: '{3}', in: {4}." -f $($MyInvocation.MyCommand.Name), $section, $key, $value, $file) -severity 'INFO'
+        } catch {
+          Write-Log -message ("{0} :: failed to set ini value. {1}" -f $($MyInvocation.MyCommand.Name), $_.Exception) -severity 'ERROR'
+        }
+      } else {
+        Write-Log -message ("{0} :: detected key: {1} with value: '{2}'." -f $($MyInvocation.MyCommand.Name), $key, $config[$section][$key]) -severity 'DEBUG'
+        if ($config[$section][$key] -ne $value) {
           try {
-            $config['extensions'].Remove('bundleclone')
-            Out-IniFile $config $hgrc
+            $config[$section].Set_Item($key, $value)
+            $encoding = (Get-FileEncoding -path $hgrc)
+            Out-IniFile -InputObject $config -FilePath $hgrc -Encoding $encoding -Force
+          Write-Log -message ("{0} :: set: [{1}]/{2}, to: '{3}', in: {4}." -f $($MyInvocation.MyCommand.Name), $section, $key, $value, $file) -severity 'INFO'
           } catch {
-            Write-Log -message ("{0} :: failed to disable bundleclone extension. {1}" -f $($MyInvocation.MyCommand.Name), $_.Exception) -severity 'ERROR'
+            Write-Log -message ("{0} :: failed to set ini value. {1}" -f $($MyInvocation.MyCommand.Name), $_.Exception) -severity 'ERROR'
+          }
+        }
+      }
+    }
+  }
+  end {
+    Write-Log -message ("{0} :: Function ended" -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
+  }
+}
+
+function Unset-IniValue {
+  param (
+    [string] $file,
+    [string] $section,
+    [string] $key
+  )
+  begin {
+    Write-Log -message ("{0} :: Function started" -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
+  }
+  process {
+    if (Test-Path $file) {
+      Write-Log -message ("{0} :: detected ini file at: {1}" -f $($MyInvocation.MyCommand.Name), $file) -severity 'DEBUG'
+      $config = Get-IniContent $file
+      if ($config.ContainsKey($section)) {
+        Write-Log -message ("{0} :: detected section: [{1}]." -f $($MyInvocation.MyCommand.Name), $section) -severity 'DEBUG'
+        if ($config[$section].ContainsKey($key)) {
+          Write-Log -message ("{0} :: detected key: {1}." -f $($MyInvocation.MyCommand.Name), $key) -severity 'DEBUG'
+          try {
+            $config[$section].Remove($key)
+            $encoding = (Get-FileEncoding -path $file)
+            Out-IniFile -InputObject $config -FilePath $file -Encoding $encoding -Force
+          } catch {
+            Write-Log -message ("{0} :: failed to unset ini value. {1}" -f $($MyInvocation.MyCommand.Name), $_.Exception) -severity 'ERROR'
           }
         }
       }
@@ -303,7 +314,6 @@ function Out-IniFile {
     [string]$Encoding = "Unicode",
 
     [ValidateNotNullOrEmpty()]
-    [ValidatePattern('^([a-zA-Z]\:)?.+\.ini$')]
     [Parameter(Mandatory=$True)]
     [string]$FilePath,
 
@@ -357,4 +367,39 @@ function Out-IniFile {
   end {
     Write-Log -message ("{0} :: Function ended" -f $($MyInvocation.MyCommand.Name)) -severity 'DEBUG'
   }
+}
+
+function Get-FileEncoding {
+  <#
+  .SYNOPSIS
+  Gets file encoding.
+  .DESCRIPTION
+  The Get-FileEncoding function determines encoding by looking at Byte Order Mark (BOM).
+  Based on port of C# code from http://www.west-wind.com/Weblog/posts/197245.aspx
+  .EXAMPLE
+  Get-ChildItem  *.ps1 | select FullName, @{n='Encoding';e={Get-FileEncoding $_.FullName}} | where {$_.Encoding -ne 'ASCII'}
+  This command gets ps1 files in current directory where encoding is not ASCII
+  .EXAMPLE
+  Get-ChildItem  *.ps1 | select FullName, @{n='Encoding';e={Get-FileEncoding $_.FullName}} | where {$_.Encoding -ne 'ASCII'} | foreach {(get-content $_.FullName) | set-content $_.FullName -Encoding ASCII}
+  Same as previous example but fixes encoding using set-content
+  #>
+  [CmdletBinding()]
+  param (
+   [Parameter(Mandatory = $True, ValueFromPipelineByPropertyName = $True)]
+   [string] $Path
+  )
+  [byte[]]$byte = get-content -Encoding byte -ReadCount 4 -TotalCount 4 -Path $Path
+  if ( $byte[0] -eq 0xef -and $byte[1] -eq 0xbb -and $byte[2] -eq 0xbf ) {
+    return 'UTF8'
+  }
+  elseif ($byte[0] -eq 0xfe -and $byte[1] -eq 0xff) {
+    return 'Unicode'
+  }
+  elseif ($byte[0] -eq 0 -and $byte[1] -eq 0 -and $byte[2] -eq 0xfe -and $byte[3] -eq 0xff) {
+    return 'UTF32'
+  }
+  elseif ($byte[0] -eq 0x2b -and $byte[1] -eq 0x2f -and $byte[2] -eq 0x76) {
+    return 'UTF7'
+  }
+  return 'ASCII'
 }
