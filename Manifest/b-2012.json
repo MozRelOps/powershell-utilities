@@ -1,0 +1,36 @@
+{
+  "software": [
+    {
+      "provider": "Powershell",
+      "commands": [
+        {
+          "log": {
+            "success": {
+              "message": "completed: Chocolatey install",
+              "severity": "debug"
+            },
+            "failure": {
+              "message": "failed: Chocolatey install",
+              "severity": "error"
+            }
+          },
+          "command": "Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))"
+        },
+      ]
+    },
+    {
+      "provider": "Chocolatey",
+      "source": "https://chocolatey.org/api/v2/",
+      "dependencies": "https://chocolatey.org/api/v2/",
+      "packages": [
+        {
+          "id": "MozillaBuild",
+          "version": "2.0.0",
+          "prerelease": false,
+          "forcex86": false,
+          "installargs": ""
+        },
+      ]
+    }
+  ]
+}
