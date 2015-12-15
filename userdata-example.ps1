@@ -17,6 +17,7 @@ $moztype = 'y-2012'
 $manifestUri = ('https://raw.githubusercontent.com/MozRelOps/powershell-utilities/master/Manifest/{0}' -f $moztype)
 $configs = @(
   'ResourceConfig',
+  'ServiceConfig',
   'SoftwareConfig'
 )
 foreach ($config in $configs) {
