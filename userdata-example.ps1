@@ -18,6 +18,7 @@ $manifestUri = ('https://raw.githubusercontent.com/MozRelOps/powershell-utilitie
 $configs = @(
   'ResourceConfig',
   'ServiceConfig',
+  'FeatureConfig',
   'SoftwareConfig'
 )
 foreach ($config in $configs) {
